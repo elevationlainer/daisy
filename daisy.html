@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A Beautiful Night - Laying Under the Stars</title>
+    <style>
+        body {
+            background-color: #050508;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            background-color: #050508;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.9);
+            max-width: 100%;
+            max-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="nightCanvas" width="1000" height="700"></canvas>
+
+    <script>
+        const canvas = document.getElementById('nightCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Configuration ---
+        const WIDTH = 1000;
+        const HEIGHT = 700;
+        const DAISY_COUNT = 250;
+        const STAR_COUNT = 800;
+        const HORIZON_Y = 400;
+
+        const BG_COLOR = "#050508";
+        const SK_TOP = "#020204";
+        const GRASS_DEEP = "#071a07";
+        const GRASS_LIGHT = "#123312";
+        const TEXT_COLOR = "#fffd91";
+
+        let sky_y = 0;
+        let stars_drawn = 0;
+        let daisies_to_draw = [];
+        
+        // Pre-load the image of her eyes
+        const eyesImg = new Image();
+        eyesImg.src = "810246178_2224115828156214_1799929967203399057_n.jpg";
+
+        // --- Helper Drawing Functions ---
+        function drawOval(x1, y1, x2, y2, fill, outline, width=1) {
+            let w = Math.abs(x2 - x1);
+            let h = Math.abs(y2 - y1);
+            let cx = Math.min(x1, x2) + w / 2;
+            let cy = Math.min(y1, y2) + h / 2;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
+            if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+            if (outline) { ctx.strokeStyle = outline; ctx.lineWidth = width; ctx.stroke(); }
+        }
+
+        function drawPoly(pts, fill, outline, width=1) {
+            ctx.beginPath();
+            ctx.lineJoin = "round";
+            ctx.moveTo(pts[0], pts[1]);
+            for (let i = 2; i < pts.length; i += 2) {
+                ctx.lineTo(pts[i], pts[i + 1]);
+            }
+            ctx.closePath();
+            if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+            if (outline) { ctx.strokeStyle = outline; ctx.lineWidth = width; ctx.stroke(); }
+        }
+
+        function drawLine(x1, y1, x2, y2, fill, width) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = fill;
+            ctx.lineWidth = width;
+            ctx.lineCap = "round";
+            ctx.stroke();
+        }
+
+        function drawArc(x1, y1, x2, y2, startDegree, extentDegree, outline, width) {
+            let w = Math.abs(x2 - x1);
+            let h = Math.abs(y2 - y1);
+            let cx = Math.min(x1, x2) + w / 2;
+            let cy = Math.min(y1, y2) + h / 2;
+            ctx.beginPath();
+            
+            // Convert tkinter angles to canvas angles (counter-clockwise)
+            let startRad = -startDegree * Math.PI / 180;
+            let endRad = -(startDegree + extentDegree) * Math.PI / 180;
+            
+            ctx.ellipse(cx, cy, w / 2, h / 2, 0, startRad, endRad, true);
+            ctx.strokeStyle = outline;
+            ctx.lineWidth = width;
+            ctx.stroke();
+        }
+
+        // --- Step 1: Animate Sky ---
+        function animateSky() {
+            let chunk_size = 5;
+            for (let i = 0; i < chunk_size; i++) {
+                if (sky_y <= HORIZON_Y) {
+                    let ratio = sky_y / HORIZON_Y;
+                    // Interpolate towards #1a0f30 (R:26, G:15, B:48)
+                    let r = Math.floor(2 + (26 - 2) * ratio);
+                    let g = Math.floor(2 + (15 - 2) * ratio);
+                    let b = Math.floor(4 + (48 - 4) * ratio);
+                    
+                    drawLine(0, sky_y, WIDTH, sky_y, `rgb(${r},${g},${b})`, 1.5);
+                    sky_y++;
+                }
+            }
+            
+            if (sky_y <= HORIZON_Y) {
+                requestAnimationFrame(animateSky);
+            } else {
+                blendEyesImage();
+                drawLandscape();
+                setTimeout(animateStars, 100);
+            }
+        }
+
+        // --- Step 2: Dissolve the Eyes Image ---
+        function blendEyesImage() {
+            if (eyesImg.complete && eyesImg.naturalHeight !== 0) {
+                let targetWidth = 750;
+                let targetHeight = eyesImg.height * (targetWidth / eyesImg.width);
+                
+                // Create an off-screen canvas to apply the smooth fading mask
+                let offCanvas = document.createElement('canvas');
+                offCanvas.width = targetWidth;
+                offCanvas.height = targetHeight;
+                let oCtx = offCanvas.getContext('2d');
+                
+                // Draw the picture
+                oCtx.drawImage(eyesImg, 0, 0, targetWidth, targetHeight);
+                
+                // Apply radial gradient mask to dissolve the hard edges
+                oCtx.globalCompositeOperation = 'destination-in';
+                let gradient = oCtx.createRadialGradient(
+                    targetWidth / 2, targetHeight / 2, targetWidth / 8, 
+                    targetWidth / 2, targetHeight / 2, targetWidth / 2.2
+                );
+                gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                oCtx.fillStyle = gradient;
+                oCtx.fillRect(0, 0, targetWidth, targetHeight);
+                
+                // Draw onto main canvas with opacity and a dream-like blur
+                ctx.save();
+                ctx.globalAlpha = 0.45;
+                ctx.filter = 'blur(6px)';
+                ctx.drawImage(offCanvas, (WIDTH / 2) - (targetWidth / 2), (HORIZON_Y / 2) - (targetHeight / 2) - 20);
+                ctx.restore();
+            }
+        }
+
+        // --- Step 3: Draw Landscape ---
+        function drawLandscape() {
+            drawPoly([0, HORIZON_Y, WIDTH/2, HORIZON_Y - 30, WIDTH, HORIZON_Y, WIDTH, HEIGHT, 0, HEIGHT], GRASS_DEEP);
+            drawPoly([0, HORIZON_Y+80, WIDTH, HORIZON_Y+50, WIDTH, HEIGHT, 0, HEIGHT], GRASS_LIGHT);
+        }
+
+        // --- Step 4: Animate Stars & Moon ---
+        function animateStars() {
+            let chunk_size = 30;
+            for (let i = 0; i < chunk_size; i++) {
+                if (stars_drawn < STAR_COUNT) {
+                    let x = Math.random() * WIDTH;
+                    let y = Math.random() * HORIZON_Y;
+                    let size = (Math.random() * 1.5) + 0.5;
+                    let brightness = Math.floor(Math.random() * 105) + 150;
+                    
+                    ctx.beginPath();
+                    ctx.fillStyle = `rgb(${brightness},${brightness},${brightness})`;
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                    stars_drawn++;
+                }
+            }
+            
+            if (stars_drawn < STAR_COUNT) {
+                requestAnimationFrame(animateStars);
+            } else {
+                // Crescent Moon
+                drawOval(120, 80, 170, 130, "#ffffdd");
+                drawOval(132, 83, 180, 130, SK_TOP);
+                setTimeout(animateText, 300);
+            }
+        }
+
+        // --- Step 5: The "I LOVE YOU" Text ---
+        function animateText() {
+            ctx.font = "bold 70px 'Arial Rounded MT Bold', sans-serif";
+            ctx.fillStyle = TEXT_COLOR;
+            ctx.textAlign = "center";
+            ctx.fillText("I LOVE YOU", WIDTH / 2, HORIZON_Y - 100);
+            setTimeout(drawAnimeCouple, 500);
+        }
+
+        // --- Step 6: Draw the Beautiful Couple ---
+        function drawAnimeCouple() {
+            let cx = WIDTH / 2;
+            let cy = HEIGHT - 140;
+            let skin_color = "#ffe0bd";
+
+            // ================= GIRL (Left Side) =================
+            let gx = cx - 70;
+            let gy = cy;
+            let hair_color = "#151515";
+
+            // Back Hair
+            drawOval(gx - 55, gy - 50, gx + 45, gy + 50, hair_color);
+            drawPoly([gx - 45, gy - 10, gx - 80, gy + 80, gx - 10, gy + 90], hair_color);
+            drawPoly([gx + 20, gy, gx + 60, gy + 70, gx + 10, gy + 80], hair_color);
+
+            // Body (Pink Cardigan)
+            drawOval(gx - 45, gy + 10, gx + 35, gy + 90, "#f4a4b4");
+            drawPoly([gx - 15, gy + 10, gx + 10, gy + 10, gx - 5, gy + 30], "white"); // Collar
+            drawPoly([gx - 25, gy + 20, gx + 5, gy + 25, gx - 5, gy + 40], "#c72c35"); // Bow Left
+            drawPoly([gx + 15, gy + 20, gx - 5, gy + 25, gx + 5, gy + 40], "#c72c35"); // Bow Right
+            drawOval(gx - 8, gy + 20, gx + 2, gy + 30, "#a11a22"); // Bow Center
+
+            // Face Skin
+            drawOval(gx - 35, gy - 35, gx + 30, gy + 30, skin_color);
+
+            // Front Bangs (Framing face)
+            drawPoly([gx - 25, gy - 40, gx - 5, gy - 22, gx + 15, gy - 40], hair_color);
+            drawPoly([gx - 5, gy - 40, gx + 15, gy - 20, gx + 25, gy - 40], hair_color);
+            drawPoly([gx - 35, gy - 35, gx - 20, gy - 15, gx - 38, gy + 5], hair_color);
+            drawPoly([gx + 25, gy - 35, gx + 15, gy - 15, gx + 35, gy + 5], hair_color);
+            drawPoly([gx - 38, gy - 15, gx - 30, gy - 20, gx - 33, gy - 10], "#32a852"); // Green clip
+
+            // Eyes
+            drawOval(gx - 20, gy - 14, gx - 6, gy + 2, "white");
+            drawOval(gx - 14, gy - 12, gx - 6, gy - 2, "#333");
+            drawOval(gx - 10, gy - 10, gx - 8, gy - 6, "white");
+            drawArc(gx - 22, gy - 16, gx - 4, gy, 0, 120, "#111", 2); // Eyelash
+
+            drawOval(gx + 4, gy - 14, gx + 18, gy + 2, "white");
+            drawOval(gx + 6, gy - 12, gx + 14, gy - 2, "#333");
+            drawOval(gx + 10, gy - 10, gx + 12, gy - 6, "white");
+            drawArc(gx + 2, gy - 16, gx + 20, gy, 60, 120, "#111", 2); // Eyelash
+
+            // Eyebrows
+            drawArc(gx - 18, gy - 20, gx - 8, gy - 14, 45, 90, hair_color, 1.5);
+            drawArc(gx + 8, gy - 20, gx + 18, gy - 14, 45, 90, hair_color, 1.5);
+
+            // Blush (Semi-transparent)
+            ctx.save(); ctx.globalAlpha = 0.5;
+            drawOval(gx - 24, gy, gx - 12, gy + 8, "#ff8a99");
+            drawOval(gx + 12, gy, gx + 24, gy + 8, "#ff8a99");
+            ctx.restore();
+
+            // Smile
+            drawArc(gx - 8, gy + 10, gx + 8, gy + 18, 180, 180, "#8B3A3A", 2);
+
+            // Girl's Text
+            ctx.font = "italic 16px Georgia";
+            ctx.fillStyle = "#ffb3c6";
+            ctx.fillText("the most beautifull", gx - 120, gy);
+            ctx.fillText("woman", gx - 120, gy + 20);
+
+            // ================= BOY (Right Side) =================
+            let bx = cx + 70;
+            let by = cy;
+
+            // Back Hair (Voluminous)
+            drawOval(bx - 55, by - 55, bx + 55, by + 25, "#111");
+            drawPoly([bx - 45, by - 30, bx - 70, by - 50, bx - 25, by - 55], "#111");
+            drawPoly([bx - 25, by - 55, bx - 20, by - 85, bx + 10, by - 60], "#111");
+            drawPoly([bx + 5, by - 60, bx + 25, by - 85, bx + 35, by - 50], "#111");
+            drawPoly([bx + 30, by - 50, bx + 70, by - 45, bx + 45, by - 20], "#111");
+
+            // Body
+            drawOval(bx - 35, by + 10, bx + 45, by + 90, "#1c1c1e");
+            drawPoly([bx - 10, by + 10, bx + 20, by + 15, bx + 5, by + 30], "#f0f0f0");
+            drawPoly([bx + 25, by + 10, bx - 5, by + 15, bx + 5, by + 30], "#f0f0f0");
+
+            // Face Skin
+            drawOval(bx - 30, by - 35, bx + 35, by + 30, skin_color);
+
+            // Front Bangs
+            drawPoly([bx - 20, by - 40, bx - 10, by - 20, bx, by - 40], "#111");
+            drawPoly([bx - 5, by - 40, bx + 5, by - 15, bx + 15, by - 40], "#111");
+            drawPoly([bx + 10, by - 40, bx + 20, by - 22, bx + 30, by - 40], "#111");
+            drawPoly([bx - 35, by - 20, bx - 35, by, bx - 25, by - 20], "#111");
+            drawPoly([bx + 35, by - 20, bx + 40, by - 5, bx + 25, by - 20], "#111");
+
+            // Glasses (Semi-transparent lens)
+            let gl_r = 15;
+            ctx.save(); ctx.globalAlpha = 0.2;
+            drawOval(bx - 25, by - 12, bx - 25 + gl_r * 2, by - 12 + gl_r * 2, "#dceeff");
+            drawOval(bx + 5, by - 12, bx + 5 + gl_r * 2, by - 12 + gl_r * 2, "#dceeff");
+            ctx.restore();
+            drawOval(bx - 25, by - 12, bx - 25 + gl_r * 2, by - 12 + gl_r * 2, null, "#fff", 2);
+            drawOval(bx + 5, by - 12, bx + 5 + gl_r * 2, by - 12 + gl_r * 2, null, "#fff", 2);
+            drawLine(bx - 25 + gl_r * 2, by + 2, bx + 5, by + 2, "#fff", 2);
+
+            // Eyes gazing left
+            drawOval(bx - 22, by - 8, bx - 10, by + 4, "white");
+            drawOval(bx + 8, by - 8, bx + 20, by + 4, "white");
+            drawOval(bx - 22, by - 6, bx - 16, by + 2, "#111");
+            drawOval(bx + 8, by - 6, bx + 14, by + 2, "#111");
+
+            // Blush & Smile
+            ctx.save(); ctx.globalAlpha = 0.5;
+            drawOval(bx - 26, by + 6, bx - 16, by + 12, "#ff8a99");
+            drawOval(bx + 16, by + 6, bx + 26, by + 12, "#ff8a99");
+            ctx.restore();
+            drawArc(bx - 10, by + 12, bx + 10, by + 20, 180, 180, "#111", 2);
+
+            // Boy's Text
+            ctx.fillStyle = "#dceeff";
+            ctx.fillText("the nearest and beautifull", bx + 140, by);
+            ctx.fillText("star for me ,sara", bx + 140, by + 20);
+
+            // Prepare for daisies
+            prepareDaisies();
+            setTimeout(animateDaisies, 600);
+        }
+
+        // --- Step 7: The Daisy Field ---
+        function prepareDaisies() {
+            for (let i = 0; i < DAISY_COUNT; i++) {
+                let dx = Math.random() * WIDTH;
+                let dy = Math.random() * (HEIGHT - (HORIZON_Y + 20)) + (HORIZON_Y + 20);
+                
+                // Keep the center clear for the beautiful text
+                if (dx > WIDTH * 0.2 && dx < WIDTH * 0.8 && dy > HEIGHT * 0.65) continue;
+
+                let depth = (dy - HORIZON_Y) / (HEIGHT - HORIZON_Y);
+                let size = ((Math.random() * 11) + 4) * (0.5 + depth * 0.5);
+                
+                daisies_to_draw.push({x: dx, y: dy, size: size, depth: depth});
+            }
+            // Sort by depth (Y coordinate) so front flowers paint over back ones
+            daisies_to_draw.sort((a, b) => a.y - b.y);
+        }
+
+        function animateDaisies() {
+            let chunk = 4;
+            for (let i = 0; i < chunk; i++) {
+                if (daisies_to_draw.length > 0) {
+                    let d = daisies_to_draw.shift();
+                    drawSingleDaisy(d.x, d.y, d.size, d.depth);
+                }
+            }
+            if (daisies_to_draw.length > 0) {
+                requestAnimationFrame(animateDaisies);
+            }
+        }
+
+        function drawSingleDaisy(x, y, size, depth) {
+            let brightness = 0.6 + (depth * 0.4);
+            let p_val = Math.floor(255 * brightness);
+            let petal_color = `rgb(${p_val}, ${p_val}, ${p_val})`;
+            let center_color = `rgb(${Math.floor(255*brightness)}, ${Math.floor(215*brightness)}, 0)`;
+
+            // Wildflowers
+            if (Math.random() < 0.15) {
+                const colors = [[255,215,0], [255,105,180], [147,112,219]]; // Gold, Pink, Purple
+                let c = colors[Math.floor(Math.random() * colors.length)];
+                petal_color = `rgb(${Math.floor(c[0]*brightness)}, ${Math.floor(c[1]*brightness)}, ${Math.floor(c[2]*brightness)})`;
+            }
+
+            let petal_len = size * 0.8;
+            let petal_wid = size * 0.3;
+
+            // 8 Petals
+            for (let i = 0; i < 8; i++) {
+                let angle = (i / 8) * 2 * Math.PI;
+                let cx = x + petal_len * Math.cos(angle);
+                let cy = y + petal_len * Math.sin(angle);
+                drawOval(cx - petal_wid, cy - petal_wid, cx + petal_wid, cy + petal_wid, petal_color);
+            }
+
+            // Center
+            let c_size = size * 0.4;
+            drawOval(x - c_size, y - c_size, x + c_size, y + c_size, center_color);
+        }
+
+        // --- Start the whole process after 0.5s ---
+        setTimeout(animateSky, 500);
+
+    </script>
+</body>
+</html>
